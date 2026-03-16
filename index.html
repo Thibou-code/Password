@@ -1,0 +1,1632 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VAULTX — Gestionnaire de mots de passe</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;900&family=JetBrains+Mono:wght@300;400;600&family=Rajdhani:wght@300;400;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+    <style>
+      /* ── RESET & VARIABLES ── */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg-void: #040810;
+        --bg-deep: #070d1c;
+        --bg-panel: #0b1428;
+        --bg-card: #0f1a32;
+        --bg-hover: #152240;
+        --border: #1b2e52;
+        --border-glow: #1e3a6e;
+        --ice: #4fc8e8;
+        --ice-dim: #2a7a96;
+        --cyan: #00d4ff;
+        --cyan-glow: rgba(0, 212, 255, 0.18);
+        --teal: #00b8a3;
+        --teal-dim: rgba(0, 184, 163, 0.12);
+        --slate: #8ba3c7;
+        --slate-dim: #4a6080;
+        --danger: #e05c6e;
+        --danger-dim: rgba(224, 92, 110, 0.15);
+        --success: #27d9a0;
+        --font-display: "Orbitron", monospace;
+        --font-mono: "JetBrains Mono", monospace;
+        --font-ui: "Rajdhani", sans-serif;
+      }
+
+      html,
+      body {
+        min-height: 100vh;
+        background: var(--bg-void);
+        color: var(--slate);
+        font-family: var(--font-ui);
+        font-size: 15px;
+        overflow-x: hidden;
+      }
+
+      /* ── GRID BACKGROUND ── */
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+        background-size: 40px 40px;
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      /* ── SCANLINE OVERLAY ── */
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background: repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 2px,
+          rgba(0, 0, 0, 0.07) 2px,
+          rgba(0, 0, 0, 0.07) 4px
+        );
+        pointer-events: none;
+        z-index: 999;
+      }
+
+      /* ── APP WRAPPER ── */
+      #app {
+        position: relative;
+        z-index: 1;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* ── HEADER ── */
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 20px 40px;
+        border-bottom: 1px solid var(--border);
+        background: linear-gradient(
+          180deg,
+          rgba(0, 212, 255, 0.04) 0%,
+          transparent 100%
+        );
+      }
+
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .logo-icon {
+        width: 38px;
+        height: 38px;
+        border: 1.5px solid var(--cyan);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow:
+          0 0 14px var(--cyan-glow),
+          inset 0 0 10px var(--cyan-glow);
+        animation: pulse-border 3s ease-in-out infinite;
+      }
+
+      .logo-icon svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      @keyframes pulse-border {
+        0%,
+        100% {
+          box-shadow:
+            0 0 14px var(--cyan-glow),
+            inset 0 0 10px var(--cyan-glow);
+        }
+        50% {
+          box-shadow:
+            0 0 24px rgba(0, 212, 255, 0.35),
+            inset 0 0 18px rgba(0, 212, 255, 0.2);
+        }
+      }
+
+      .logo-text {
+        font-family: var(--font-display);
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: 4px;
+        color: var(--ice);
+      }
+
+      .logo-sub {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--slate-dim);
+        letter-spacing: 3px;
+        margin-top: 2px;
+      }
+
+      .header-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--slate-dim);
+      }
+
+      .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--success);
+        box-shadow: 0 0 8px var(--success);
+        animation: blink 2s ease-in-out infinite;
+      }
+
+      @keyframes blink {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.3;
+        }
+      }
+
+      /* ── MAIN LAYOUT ── */
+      main {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 420px 1fr;
+        gap: 0;
+        max-width: 1400px;
+        width: 100%;
+        margin: 0 auto;
+        padding: 32px 40px;
+        gap: 28px;
+      }
+
+      /* ── PANEL ── */
+      .panel {
+        background: var(--bg-panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .panel::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--cyan),
+          transparent
+        );
+        opacity: 0.5;
+      }
+
+      .panel-header {
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .panel-title {
+        font-family: var(--font-display);
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 3px;
+        color: var(--ice);
+        text-transform: uppercase;
+      }
+
+      .panel-body {
+        padding: 24px;
+      }
+
+      /* ── GENERATOR DISPLAY ── */
+      .pw-display {
+        background: var(--bg-void);
+        border: 1px solid var(--border-glow);
+        border-radius: 8px;
+        padding: 18px 20px;
+        margin-bottom: 20px;
+        min-height: 72px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .pw-display::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          135deg,
+          var(--cyan-glow) 0%,
+          transparent 60%
+        );
+        pointer-events: none;
+      }
+
+      .pw-value {
+        font-family: var(--font-mono);
+        font-size: 15px;
+        font-weight: 400;
+        color: var(--cyan);
+        letter-spacing: 1.5px;
+        word-break: break-all;
+        flex: 1;
+        line-height: 1.5;
+        text-shadow: 0 0 12px rgba(0, 212, 255, 0.4);
+      }
+
+      .pw-value.empty {
+        color: var(--slate-dim);
+        font-size: 12px;
+        letter-spacing: 3px;
+      }
+
+      .pw-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+
+      /* ── STRENGTH BAR ── */
+      .strength-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+
+      .strength-label {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 2px;
+        color: var(--slate-dim);
+        width: 60px;
+      }
+
+      .strength-bars {
+        display: flex;
+        gap: 4px;
+        flex: 1;
+      }
+
+      .strength-bar {
+        flex: 1;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border);
+        transition:
+          background 0.4s ease,
+          box-shadow 0.4s ease;
+      }
+
+      .strength-bar.active-weak {
+        background: var(--danger);
+        box-shadow: 0 0 6px var(--danger);
+      }
+      .strength-bar.active-medium {
+        background: #e0a050;
+        box-shadow: 0 0 6px #e0a050;
+      }
+      .strength-bar.active-strong {
+        background: var(--teal);
+        box-shadow: 0 0 6px var(--teal);
+      }
+
+      .strength-text {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 1px;
+        width: 52px;
+        text-align: right;
+      }
+
+      /* ── CONTROLS ── */
+      .control-group {
+        margin-bottom: 16px;
+      }
+
+      .control-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .control-label span {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        letter-spacing: 1px;
+        color: var(--slate);
+      }
+
+      .control-label .val {
+        font-weight: 600;
+        color: var(--ice);
+      }
+
+      input[type="range"] {
+        -webkit-appearance: none;
+        width: 100%;
+        height: 2px;
+        background: var(--border-glow);
+        border-radius: 2px;
+        outline: none;
+      }
+
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--bg-panel);
+        border: 2px solid var(--cyan);
+        box-shadow: 0 0 10px var(--cyan-glow);
+        cursor: pointer;
+        transition: box-shadow 0.2s;
+      }
+
+      input[type="range"]::-webkit-slider-thumb:hover {
+        box-shadow: 0 0 16px rgba(0, 212, 255, 0.5);
+      }
+
+      /* ── TOGGLES ── */
+      .toggles {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 20px;
+      }
+
+      .toggle-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        cursor: pointer;
+        transition:
+          border-color 0.2s,
+          background 0.2s;
+        user-select: none;
+      }
+
+      .toggle-item:hover {
+        border-color: var(--ice-dim);
+        background: var(--bg-hover);
+      }
+      .toggle-item.active {
+        border-color: var(--teal);
+        background: var(--teal-dim);
+      }
+
+      .toggle-name {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 1px;
+        color: var(--slate);
+      }
+
+      .toggle-item.active .toggle-name {
+        color: var(--teal);
+      }
+
+      .toggle-switch {
+        width: 28px;
+        height: 14px;
+        background: var(--border);
+        border-radius: 7px;
+        position: relative;
+        transition: background 0.2s;
+        flex-shrink: 0;
+      }
+
+      .toggle-item.active .toggle-switch {
+        background: var(--teal);
+      }
+
+      .toggle-switch::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #fff;
+        transition: transform 0.2s;
+      }
+
+      .toggle-item.active .toggle-switch::after {
+        transform: translateX(14px);
+      }
+
+      /* ── SAVE SECTION ── */
+      .save-row {
+        display: flex;
+        gap: 8px;
+      }
+
+      .input-field {
+        flex: 1;
+        background: var(--bg-void);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--ice);
+        outline: none;
+        transition:
+          border-color 0.2s,
+          box-shadow 0.2s;
+      }
+
+      .input-field::placeholder {
+        color: var(--slate-dim);
+      }
+
+      .input-field:focus {
+        border-color: var(--ice-dim);
+        box-shadow: 0 0 0 2px rgba(79, 200, 232, 0.08);
+      }
+
+      /* ── BUTTONS ── */
+      .btn {
+        padding: 10px 18px;
+        border-radius: 6px;
+        border: 1px solid;
+        font-family: var(--font-display);
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 2px;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        white-space: nowrap;
+        text-transform: uppercase;
+      }
+
+      .btn-primary {
+        background: linear-gradient(
+          135deg,
+          rgba(0, 212, 255, 0.12),
+          rgba(0, 184, 163, 0.08)
+        );
+        border-color: var(--ice-dim);
+        color: var(--ice);
+        width: 100%;
+        padding: 13px;
+        margin-bottom: 12px;
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        background: linear-gradient(
+          135deg,
+          rgba(0, 212, 255, 0.22),
+          rgba(0, 184, 163, 0.15)
+        );
+        border-color: var(--cyan);
+        color: var(--cyan);
+        box-shadow: 0 0 20px var(--cyan-glow);
+      }
+
+      .btn-icon {
+        background: transparent;
+        border-color: var(--border);
+        color: var(--slate-dim);
+        padding: 8px 10px;
+        font-size: 13px;
+        letter-spacing: 0;
+      }
+
+      .btn-icon:hover {
+        border-color: var(--ice-dim);
+        color: var(--ice);
+      }
+
+      .btn-save {
+        background: linear-gradient(
+          135deg,
+          rgba(0, 184, 163, 0.15),
+          rgba(0, 184, 163, 0.05)
+        );
+        border-color: var(--teal);
+        color: var(--teal);
+      }
+
+      .btn-save:hover:not(:disabled) {
+        background: linear-gradient(
+          135deg,
+          rgba(0, 184, 163, 0.28),
+          rgba(0, 184, 163, 0.12)
+        );
+        box-shadow: 0 0 16px rgba(0, 184, 163, 0.25);
+      }
+
+      .btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      .btn-loading span {
+        animation: spin 0.6s linear infinite;
+        display: inline-block;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* ── RIGHT PANEL — LIST ── */
+      .vault-panel {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .vault-panel .panel-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+      }
+
+      .vault-panel .panel-body::-webkit-scrollbar {
+        width: 4px;
+      }
+      .vault-panel .panel-body::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .vault-panel .panel-body::-webkit-scrollbar-thumb {
+        background: var(--border-glow);
+        border-radius: 2px;
+      }
+
+      .vault-stats {
+        display: flex;
+        gap: 20px;
+        padding: 14px 24px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .stat {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .stat-val {
+        font-family: var(--font-display);
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--ice);
+      }
+
+      .stat-lbl {
+        font-family: var(--font-mono);
+        font-size: 9px;
+        letter-spacing: 2px;
+        color: var(--slate-dim);
+      }
+
+      .stat-sep {
+        width: 1px;
+        background: var(--border);
+        margin: 0 4px;
+      }
+
+      /* ── SEARCH ── */
+      .search-row {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .search-wrap {
+        position: relative;
+      }
+
+      .search-icon {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--slate-dim);
+        font-size: 12px;
+      }
+
+      .search-input {
+        width: 100%;
+        background: var(--bg-void);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 9px 14px 9px 34px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--ice);
+        outline: none;
+        transition: border-color 0.2s;
+      }
+
+      .search-input::placeholder {
+        color: var(--slate-dim);
+      }
+      .search-input:focus {
+        border-color: var(--ice-dim);
+      }
+
+      /* ── PASSWORD CARDS ── */
+      .pw-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .pw-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        transition:
+          border-color 0.2s,
+          background 0.2s,
+          transform 0.15s;
+        cursor: default;
+        animation: slideIn 0.3s ease forwards;
+      }
+
+      @keyframes slideIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .pw-card:hover {
+        border-color: var(--border-glow);
+        background: var(--bg-hover);
+      }
+
+      .pw-card-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        background: linear-gradient(
+          135deg,
+          rgba(0, 212, 255, 0.1),
+          rgba(0, 184, 163, 0.07)
+        );
+        border: 1px solid var(--border-glow);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        flex-shrink: 0;
+      }
+
+      .pw-card-info {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .pw-card-label {
+        font-family: var(--font-ui);
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--ice);
+        margin-bottom: 3px;
+        letter-spacing: 0.5px;
+      }
+
+      .pw-card-value {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--slate-dim);
+        letter-spacing: 1px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pw-card-value.revealed {
+        color: var(--teal);
+      }
+
+      .pw-card-meta {
+        font-family: var(--font-mono);
+        font-size: 9px;
+        color: var(--slate-dim);
+        letter-spacing: 0.5px;
+        margin-top: 4px;
+      }
+
+      .pw-card-actions {
+        display: flex;
+        gap: 5px;
+        flex-shrink: 0;
+      }
+
+      .btn-card {
+        width: 30px;
+        height: 30px;
+        border-radius: 5px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--slate-dim);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        transition: all 0.2s;
+      }
+
+      .btn-card:hover {
+        border-color: var(--ice-dim);
+        color: var(--ice);
+      }
+      .btn-card.danger:hover {
+        border-color: var(--danger);
+        color: var(--danger);
+        background: var(--danger-dim);
+      }
+
+      /* ── EMPTY STATE ── */
+      .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 60px 24px;
+        gap: 12px;
+        text-align: center;
+      }
+
+      .empty-icon {
+        font-size: 32px;
+        opacity: 0.3;
+        margin-bottom: 4px;
+      }
+
+      .empty-title {
+        font-family: var(--font-display);
+        font-size: 11px;
+        letter-spacing: 3px;
+        color: var(--slate-dim);
+      }
+
+      .empty-sub {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--border-glow);
+      }
+
+      /* ── TOAST ── */
+      .toast-container {
+        position: fixed;
+        bottom: 28px;
+        right: 28px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 1000;
+      }
+
+      .toast {
+        padding: 12px 18px;
+        border-radius: 8px;
+        border: 1px solid;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        letter-spacing: 1px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        animation: toastIn 0.3s ease;
+        backdrop-filter: blur(12px);
+      }
+
+      @keyframes toastIn {
+        from {
+          opacity: 0;
+          transform: translateX(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+
+      .toast.success {
+        background: rgba(39, 217, 160, 0.12);
+        border-color: var(--success);
+        color: var(--success);
+      }
+      .toast.error {
+        background: var(--danger-dim);
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+      .toast.info {
+        background: var(--cyan-glow);
+        border-color: var(--ice-dim);
+        color: var(--ice);
+      }
+
+      /* ── MODAL ── */
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(4, 8, 16, 0.85);
+        backdrop-filter: blur(6px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 500;
+        animation: fadeIn 0.2s ease;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      .modal {
+        background: var(--bg-panel);
+        border: 1px solid var(--border-glow);
+        border-radius: 12px;
+        padding: 28px;
+        width: 360px;
+        position: relative;
+        animation: scaleIn 0.2s ease;
+      }
+
+      @keyframes scaleIn {
+        from {
+          transform: scale(0.95);
+          opacity: 0;
+        }
+        to {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+
+      .modal::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--danger),
+          transparent
+        );
+      }
+
+      .modal-title {
+        font-family: var(--font-display);
+        font-size: 12px;
+        letter-spacing: 3px;
+        color: var(--danger);
+        margin-bottom: 12px;
+      }
+
+      .modal-body {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--slate);
+        margin-bottom: 24px;
+        line-height: 1.6;
+      }
+
+      .modal-body strong {
+        color: var(--ice);
+      }
+
+      .modal-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .btn-ghost {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--slate-dim);
+        padding: 9px 18px;
+        border-radius: 6px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .btn-ghost:hover {
+        border-color: var(--slate-dim);
+        color: var(--slate);
+      }
+
+      .btn-danger {
+        background: var(--danger-dim);
+        border: 1px solid var(--danger);
+        color: var(--danger);
+        padding: 9px 18px;
+        border-radius: 6px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .btn-danger:hover {
+        background: rgba(224, 92, 110, 0.25);
+      }
+
+      /* ── CORNER DECORATIONS ── */
+      .corner-tl,
+      .corner-br {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+      }
+
+      .corner-tl {
+        top: -1px;
+        left: -1px;
+        border-top: 2px solid var(--cyan);
+        border-left: 2px solid var(--cyan);
+      }
+      .corner-br {
+        bottom: -1px;
+        right: -1px;
+        border-bottom: 2px solid var(--cyan);
+        border-right: 2px solid var(--cyan);
+      }
+
+      /* ── RESPONSIVE ── */
+      @media (max-width: 900px) {
+        main {
+          grid-template-columns: 1fr;
+          padding: 16px;
+        }
+        header {
+          padding: 16px 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <!-- HEADER -->
+      <header>
+        <div class="logo">
+          <div class="logo-icon">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              color="#00d4ff"
+            >
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+          </div>
+          <div>
+            <div class="logo-text">VAULTX</div>
+            <div class="logo-sub">SECURE VAULT v2.4</div>
+          </div>
+        </div>
+        <div class="header-status">
+          <div class="status-dot"></div>
+          CONNEXION SÉCURISÉE — AES-256
+        </div>
+      </header>
+
+      <!-- MAIN -->
+      <main>
+        <!-- LEFT — GENERATOR -->
+        <div class="panel" style="display: flex; flex-direction: column">
+          <div class="corner-tl"></div>
+          <div class="corner-br"></div>
+          <div class="panel-header">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#4fc8e8"
+              stroke-width="2"
+            >
+              <path
+                d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
+              />
+            </svg>
+            <span class="panel-title">Générateur</span>
+          </div>
+
+          <div class="panel-body" style="flex: 1">
+            <!-- Display -->
+            <div class="pw-display">
+              <span class="pw-value" :class="{ empty: !generatedPw }">
+                {{ generatedPw || '[ AUCUN MOT DE PASSE GÉNÉRÉ ]' }}
+              </span>
+              <div class="pw-actions" v-if="generatedPw">
+                <button
+                  class="btn btn-icon"
+                  @click="copyGenerated"
+                  title="Copier"
+                >
+                  📋
+                </button>
+                <button
+                  class="btn btn-icon"
+                  @click="generate"
+                  title="Régénérer"
+                >
+                  🔄
+                </button>
+              </div>
+            </div>
+
+            <!-- Strength -->
+            <div class="strength-row" v-if="generatedPw">
+              <span class="strength-label">FORCE</span>
+              <div class="strength-bars">
+                <div
+                  v-for="i in 5"
+                  :key="i"
+                  class="strength-bar"
+                  :class="strengthBarClass(i)"
+                ></div>
+              </div>
+              <span class="strength-text" :style="{ color: strengthColor }"
+                >{{ strengthLabel }}</span
+              >
+            </div>
+
+            <!-- Length -->
+            <div class="control-group">
+              <div class="control-label">
+                <span>LONGUEUR</span>
+                <span class="val">{{ options.length }} CARACTÈRES</span>
+              </div>
+              <input
+                type="range"
+                min="8"
+                max="64"
+                v-model.number="options.length"
+              />
+            </div>
+
+            <!-- Toggles -->
+            <div class="toggles">
+              <div
+                class="toggle-item"
+                :class="{ active: options.uppercase }"
+                @click="options.uppercase = !options.uppercase"
+              >
+                <span class="toggle-name">MAJUSCULES</span>
+                <div class="toggle-switch"></div>
+              </div>
+              <div
+                class="toggle-item"
+                :class="{ active: options.lowercase }"
+                @click="options.lowercase = !options.lowercase"
+              >
+                <span class="toggle-name">MINUSCULES</span>
+                <div class="toggle-switch"></div>
+              </div>
+              <div
+                class="toggle-item"
+                :class="{ active: options.numbers }"
+                @click="options.numbers = !options.numbers"
+              >
+                <span class="toggle-name">CHIFFRES</span>
+                <div class="toggle-switch"></div>
+              </div>
+              <div
+                class="toggle-item"
+                :class="{ active: options.symbols }"
+                @click="options.symbols = !options.symbols"
+              >
+                <span class="toggle-name">SYMBOLES</span>
+                <div class="toggle-switch"></div>
+              </div>
+            </div>
+
+            <!-- Generate -->
+            <button
+              class="btn btn-primary"
+              @click="generate"
+              :disabled="isGenerating"
+            >
+              <span v-if="isGenerating" class="btn-loading"
+                ><span>⟳</span> GÉNÉRATION...</span
+              >
+              <span v-else>⚡ GÉNÉRER UN MOT DE PASSE</span>
+            </button>
+
+            <!-- Save -->
+            <div class="save-row">
+              <input
+                class="input-field"
+                placeholder="Nom du compte (ex: GitHub)"
+                v-model="saveLabel"
+                @keyup.enter="savePassword"
+              />
+              <button
+                class="btn btn-save"
+                @click="savePassword"
+                :disabled="!generatedPw || !saveLabel.trim() || isSaving"
+              >
+                <span v-if="isSaving">⟳</span>
+                <span v-else>SAUVER</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT — VAULT -->
+        <div class="panel vault-panel">
+          <div class="panel-header">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#4fc8e8"
+              stroke-width="2"
+            >
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <path d="M8 21h8M12 17v4" />
+            </svg>
+            <span class="panel-title">Coffre-fort</span>
+          </div>
+
+          <!-- Stats -->
+          <div class="vault-stats">
+            <div class="stat">
+              <span class="stat-val">{{ passwords.length }}</span>
+              <span class="stat-lbl">ENTRÉES</span>
+            </div>
+            <div class="stat-sep"></div>
+            <div class="stat">
+              <span class="stat-val">{{ avgStrength }}</span>
+              <span class="stat-lbl">FORCE MOY.</span>
+            </div>
+            <div class="stat-sep"></div>
+            <div class="stat">
+              <span class="stat-val" style="color: var(--success)">ACTIF</span>
+              <span class="stat-lbl">CHIFFREMENT</span>
+            </div>
+          </div>
+
+          <!-- Search -->
+          <div class="search-row">
+            <div class="search-wrap">
+              <span class="search-icon">🔍</span>
+              <input
+                class="search-input"
+                placeholder="Rechercher un compte..."
+                v-model="search"
+              />
+            </div>
+          </div>
+
+          <!-- List -->
+          <div class="panel-body">
+            <div v-if="isLoading" class="empty-state">
+              <div
+                class="empty-icon"
+                style="animation: spin 1s linear infinite"
+              >
+                ⟳
+              </div>
+              <div class="empty-title">CHARGEMENT DU COFFRE</div>
+            </div>
+
+            <div v-else-if="filteredPasswords.length === 0" class="empty-state">
+              <div class="empty-icon">🔒</div>
+              <div class="empty-title">COFFRE VIDE</div>
+              <div class="empty-sub">
+                Générez et sauvegardez votre premier mot de passe
+              </div>
+            </div>
+
+            <div v-else class="pw-list">
+              <div class="pw-card" v-for="pw in filteredPasswords" :key="pw.id">
+                <div class="pw-card-icon">
+                  {{ pw.label.charAt(0).toUpperCase() }}
+                </div>
+                <div class="pw-card-info">
+                  <div class="pw-card-label">{{ pw.label }}</div>
+                  <div class="pw-card-value" :class="{ revealed: pw.revealed }">
+                    {{ pw.revealed ? pw.value : maskedPassword(pw.value) }}
+                  </div>
+                  <div class="pw-card-meta">{{ formatDate(pw.createdAt) }}</div>
+                </div>
+                <div class="pw-card-actions">
+                  <button
+                    class="btn-card"
+                    @click="toggleReveal(pw)"
+                    :title="pw.revealed ? 'Masquer' : 'Révéler'"
+                  >
+                    {{ pw.revealed ? '🙈' : '👁' }}
+                  </button>
+                  <button
+                    class="btn-card"
+                    @click="copyPassword(pw)"
+                    title="Copier"
+                  >
+                    📋
+                  </button>
+                  <button
+                    class="btn-card danger"
+                    @click="confirmDelete(pw)"
+                    title="Supprimer"
+                  >
+                    🗑
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- TOASTS -->
+      <div class="toast-container">
+        <div
+          v-for="toast in toasts"
+          :key="toast.id"
+          class="toast"
+          :class="toast.type"
+        >
+          <span>{{ toast.icon }}</span>
+          {{ toast.message }}
+        </div>
+      </div>
+
+      <!-- DELETE MODAL -->
+      <div
+        class="modal-overlay"
+        v-if="deleteTarget"
+        @click.self="deleteTarget = null"
+      >
+        <div class="modal">
+          <div class="modal-title">⚠ CONFIRMER LA SUPPRESSION</div>
+          <div class="modal-body">
+            Voulez-vous supprimer le mot de passe associé à
+            <strong>{{ deleteTarget?.label }}</strong> ?<br />
+            Cette action est irréversible.
+          </div>
+          <div class="modal-actions">
+            <button class="btn-ghost" @click="deleteTarget = null">
+              Annuler
+            </button>
+            <button class="btn-danger" @click="deletePassword">
+              Supprimer
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const { createApp, ref, computed, onMounted } = Vue;
+
+      // ── CONFIG AXIOS ──
+      const api = axios.create({
+        baseURL: "http://localhost:3000/api", // ← adaptez à votre backend
+        timeout: 8000,
+        headers: { "Content-Type": "application/json" },
+      });
+
+      createApp({
+        setup() {
+          // ── STATE ──
+          const generatedPw = ref("");
+          const saveLabel = ref("");
+          const search = ref("");
+          const passwords = ref([]);
+          const toasts = ref([]);
+          const deleteTarget = ref(null);
+          const isGenerating = ref(false);
+          const isSaving = ref(false);
+          const isLoading = ref(true);
+
+          const options = ref({
+            length: 16,
+            uppercase: true,
+            lowercase: true,
+            numbers: true,
+            symbols: false,
+          });
+
+          // ── HELPERS ──
+          const CHARS = {
+            uppercase: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            lowercase: "abcdefghijklmnopqrstuvwxyz",
+            numbers: "0123456789",
+            symbols: "!@#$%^&*()_+-=[]{}|;:,.<>?",
+          };
+
+          function localGenerate() {
+            let charset = "";
+            if (options.value.uppercase) charset += CHARS.uppercase;
+            if (options.value.lowercase) charset += CHARS.lowercase;
+            if (options.value.numbers) charset += CHARS.numbers;
+            if (options.value.symbols) charset += CHARS.symbols;
+            if (!charset) charset = CHARS.lowercase;
+            return Array.from(
+              { length: options.value.length },
+              () => charset[Math.floor(Math.random() * charset.length)],
+            ).join("");
+          }
+
+          function calcStrength(pw) {
+            if (!pw) return 0;
+            let score = 0;
+            if (pw.length >= 12) score++;
+            if (pw.length >= 20) score++;
+            if (/[A-Z]/.test(pw)) score++;
+            if (/[0-9]/.test(pw)) score++;
+            if (/[^A-Za-z0-9]/.test(pw)) score++;
+            return score;
+          }
+
+          const strength = computed(() => calcStrength(generatedPw.value));
+
+          const strengthLabel = computed(() => {
+            const map = ["", "FAIBLE", "FAIBLE", "MOYEN", "FORT", "MAXIMUM"];
+            return map[strength.value] || "";
+          });
+
+          const strengthColor = computed(() => {
+            if (strength.value <= 2) return "var(--danger)";
+            if (strength.value === 3) return "#e0a050";
+            return "var(--teal)";
+          });
+
+          function strengthBarClass(i) {
+            if (i > strength.value) return "";
+            if (strength.value <= 2) return "active-weak";
+            if (strength.value === 3) return "active-medium";
+            return "active-strong";
+          }
+
+          const avgStrength = computed(() => {
+            if (!passwords.value.length) return "—";
+            const avg =
+              passwords.value.reduce((s, p) => s + calcStrength(p.value), 0) /
+              passwords.value.length;
+            const map = ["—", "FAIBLE", "FAIBLE", "MOYEN", "FORT", "MAX"];
+            return map[Math.round(avg)] || "—";
+          });
+
+          function maskedPassword(val) {
+            return "•".repeat(Math.min(val?.length || 0, 20));
+          }
+
+          function formatDate(d) {
+            if (!d) return "";
+            try {
+              return new Intl.DateTimeFormat("fr-FR", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              }).format(new Date(d));
+            } catch {
+              return d;
+            }
+          }
+
+          const filteredPasswords = computed(() => {
+            if (!search.value.trim()) return passwords.value;
+            return passwords.value.filter((p) =>
+              p.label.toLowerCase().includes(search.value.toLowerCase()),
+            );
+          });
+
+          // ── TOASTS ──
+          function addToast(message, type = "info", icon = "◈") {
+            const id = Date.now();
+            toasts.value.push({ id, message, type, icon });
+            setTimeout(() => {
+              toasts.value = toasts.value.filter((t) => t.id !== id);
+            }, 3000);
+          }
+
+          // ── ACTIONS ──
+          async function generate() {
+            isGenerating.value = true;
+            try {
+              // Tentative appel backend ; fallback local si erreur réseau
+              const res = await api.post("/passwords/generate", options.value);
+              generatedPw.value = res.data.password;
+            } catch {
+              // Génération côté client si le backend n'est pas disponible
+              generatedPw.value = localGenerate();
+            } finally {
+              isGenerating.value = false;
+            }
+          }
+
+          async function fetchPasswords() {
+            isLoading.value = true;
+            try {
+              const res = await api.get("/passwords");
+              passwords.value = (res.data || []).map((p) => ({
+                ...p,
+                revealed: false,
+              }));
+            } catch {
+              addToast("Impossible de charger le coffre-fort", "error", "⚠");
+            } finally {
+              isLoading.value = false;
+            }
+          }
+
+          async function savePassword() {
+            if (!generatedPw.value || !saveLabel.value.trim()) return;
+            isSaving.value = true;
+            try {
+              const res = await api.post("/passwords", {
+                label: saveLabel.value.trim(),
+                value: generatedPw.value,
+              });
+              passwords.value.unshift({ ...res.data, revealed: false });
+              addToast(
+                `"${saveLabel.value}" sauvegardé avec succès`,
+                "success",
+                "✓",
+              );
+              saveLabel.value = "";
+              generatedPw.value = "";
+            } catch (err) {
+              addToast("Erreur lors de la sauvegarde", "error", "⚠");
+            } finally {
+              isSaving.value = false;
+            }
+          }
+
+          function confirmDelete(pw) {
+            deleteTarget.value = pw;
+          }
+
+          async function deletePassword() {
+            if (!deleteTarget.value) return;
+            const target = deleteTarget.value;
+            deleteTarget.value = null;
+            try {
+              await api.delete(`/passwords/${target.id}`);
+              passwords.value = passwords.value.filter(
+                (p) => p.id !== target.id,
+              );
+              addToast(`"${target.label}" supprimé`, "info", "🗑");
+            } catch {
+              addToast("Erreur lors de la suppression", "error", "⚠");
+            }
+          }
+
+          function toggleReveal(pw) {
+            pw.revealed = !pw.revealed;
+          }
+
+          async function copyPassword(pw) {
+            try {
+              // Récupère la valeur complète si besoin via API
+              let val = pw.value;
+              if (!val) {
+                const res = await api.get(`/passwords/${pw.id}`);
+                val = res.data.value;
+              }
+              await navigator.clipboard.writeText(val);
+              addToast("Mot de passe copié", "success", "📋");
+            } catch {
+              addToast("Erreur lors de la copie", "error", "⚠");
+            }
+          }
+
+          async function copyGenerated() {
+            try {
+              await navigator.clipboard.writeText(generatedPw.value);
+              addToast("Copié dans le presse-papiers", "success", "📋");
+            } catch {
+              addToast("Erreur lors de la copie", "error", "⚠");
+            }
+          }
+
+          onMounted(fetchPasswords);
+
+          return {
+            generatedPw,
+            saveLabel,
+            search,
+            passwords,
+            toasts,
+            deleteTarget,
+            options,
+            isGenerating,
+            isSaving,
+            isLoading,
+            strength,
+            strengthLabel,
+            strengthColor,
+            strengthBarClass,
+            avgStrength,
+            filteredPasswords,
+            generate,
+            savePassword,
+            confirmDelete,
+            deletePassword,
+            toggleReveal,
+            copyPassword,
+            copyGenerated,
+            maskedPassword,
+            formatDate,
+          };
+        },
+      }).mount("#app");
+    </script>
+  </body>
+</html>
