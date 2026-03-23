@@ -132,7 +132,7 @@ int password_generate(struct http_request *req)
         return (KORE_RESULT_OK);
     }
 
-    // Récupérer le champ "site" 
+    // Récupérer le champ "site"
     site = kore_json_find_string(json.root, "site");
     if (site == NULL)
     {
@@ -147,7 +147,7 @@ int password_generate(struct http_request *req)
         pw_length = lengthPt->data.integer;
 
     // Générer le mot de passe
-    generate_password(password,  (int)pw_length);
+    generate_password(password, (int)pw_length);
 
     // Sauvegarder en base
     if (sqlite3_prepare_v2(db,
@@ -198,6 +198,65 @@ int password_generate(struct http_request *req)
 
 int password_delete(struct http_request *req)
 {
-    // TODO
-    return 0;
+    struct kore_json json;
+    struct kore_json_item *id_item;
+    sqlite3_stmt *stmt;
+    u_int8_t *body;
+    ssize_t body_len;
+    int64_t rows_affected;
+    const char *error_msg = "\"id\" requis";
+
+    if (req->http_body_length == 0)
+    {
+        http_response(req, 400, error_msg, strlen(error_msg));
+        return (KORE_RESULT_OK);
+    }
+
+    body = kore_malloc(req->http_body_length);
+    body_len = http_body_read(req, body, req->http_body_length);
+
+    kore_json_init(&json, body, (size_t)body_len);
+    if (!kore_json_parse(&json))
+    {
+        http_response(req, 400, "JSON invalide", 13);
+        kore_json_cleanup(&json);
+        kore_free(body);
+        return (KORE_RESULT_OK);
+    }
+
+    id_item = kore_json_find_integer(json.root, "id");
+    if (id_item == NULL)
+    {
+        http_response(req, 400, error_msg, strlen(error_msg));
+        kore_json_cleanup(&json);
+        kore_free(body);
+        return (KORE_RESULT_OK);
+    }
+
+    if (sqlite3_prepare_v2(db,
+                           "DELETE FROM passwords WHERE id = ?",
+                           -1, &stmt, NULL) != SQLITE_OK)
+    {
+        http_response(req, 500, NULL, 0);
+        kore_json_cleanup(&json);
+        kore_free(body);
+        return (KORE_RESULT_OK);
+    }
+
+    sqlite3_bind_int64(stmt, 1, id_item->data.integer);
+    sqlite3_step(stmt);
+
+    rows_affected = sqlite3_changes(db);
+    sqlite3_finalize(stmt);
+    kore_json_cleanup(&json);
+    kore_free(body);
+
+    if (rows_affected == 0)
+    {
+        http_response(req, 404, "\"id\" introuvable", 16);
+        return (KORE_RESULT_OK);
+    }
+
+    http_response(req, 204, NULL, 0);
+    return (KORE_RESULT_OK);
 }
