@@ -3,6 +3,18 @@
 #include <kore/hooks.h>
 #include <sqlite3.h>
 
+/*
+ * Service API de gestion de mots de passe (Kore + SQLite)
+ *
+ * Endpoints exposés:
+ * - GET    /passwords?site=<filtre> : liste les entrées (optionnellement filtrées).
+ * - POST   /passwords               : génère et enregistre un mot de passe.
+ * - DELETE /passwords               : supprime une entrée via son id.
+ *
+ * Schéma SQLite:
+ *   passwords(id INTEGER PRIMARY KEY AUTOINCREMENT, site TEXT, password TEXT)
+ */
+
 #define PASSWORD_CHARS           \
     "abcdefghijklmnopqrstuvwxyz" \
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ" \
@@ -13,12 +25,17 @@
 #define PASSWORD_DEFAULT_LEN 16
 #define PASSWORD_MAX_LEN 64
 
+/* Connexion SQLite globale initialisée au démarrage du worker Kore. */
 sqlite3 *db = NULL;
 
 int password_list(struct http_request *req);
 int password_generate(struct http_request *req);
 int password_delete(struct http_request *req);
 
+/*
+ * Génère un mot de passe aléatoire de longueur `length` dans `out`.
+ * `out` doit pouvoir contenir `length + 1` caractères (terminaison '\0').
+ */
 static void generate_password(char *out, int length)
 {
     for (int i = 0; i < length; i++)
@@ -28,6 +45,7 @@ static void generate_password(char *out, int length)
 
 void kore_worker_configure(void)
 {
+    /* Ouvre la base locale et crée la table si nécessaire. */
     int rc = sqlite3_open("passwords.db", &db);
     if (rc != SQLITE_OK)
     {
@@ -35,7 +53,7 @@ void kore_worker_configure(void)
         return;
     }
 
-    // Création de la table si elle n'existe pas
+    /* Création de la table de stockage. */
     char *sql = "CREATE TABLE IF NOT EXISTS passwords ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                 "site TEXT NOT NULL,"
@@ -47,6 +65,10 @@ void kore_worker_configure(void)
 
 int password_list(struct http_request *req)
 {
+    /*
+     * Retourne une réponse JSON de la forme:
+     * { "passwords": [ { "id": ..., "site": "...", "password": "..." }, ... ] }
+     */
     struct kore_json_item *root, *array, *obj;
     sqlite3_stmt *stmt;
     char *filter_site;
@@ -55,7 +77,7 @@ int password_list(struct http_request *req)
     http_populate_get(req);
     int has_filter = http_argument_get_string(req, "site", &filter_site);
 
-    // Construction JSON : racine = objet, pas besoin de kore_json_init
+    /* Construction de la structure JSON de réponse. */
     root = kore_json_create_object(NULL, NULL);
     array = kore_json_create_array(root, "passwords");
 
@@ -73,6 +95,7 @@ int password_list(struct http_request *req)
 
     if (has_filter)
     {
+        /* Ajoute des jokers SQL pour un filtrage partiel sur `site`. */
         char *query = kore_malloc(strlen(filter_site) + 3);
         sprintf(query, "%%%s%%", filter_site);
         sqlite3_bind_text(stmt, 1, query, -1, kore_free);
@@ -80,7 +103,7 @@ int password_list(struct http_request *req)
 
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
-        // Les items d'un array ont NULL comme nom
+        /* Dans un tableau JSON Kore, les éléments n'ont pas de clé (NULL). */
         obj = kore_json_create_object(array, NULL);
         kore_json_create_integer(obj, "id", sqlite3_column_int(stmt, 0));
         kore_json_create_string(obj, "site", (const char *)sqlite3_column_text(stmt, 1));
@@ -102,6 +125,13 @@ int password_list(struct http_request *req)
 
 int password_generate(struct http_request *req)
 {
+    /*
+     * Attend un body JSON:
+     * { "site": "...", "length": <optionnel, 8..64> }
+     *
+     * Réponse 201:
+     * { "password": { "id": ..., "site": "...", "password": "..." } }
+     */
     struct kore_json json;
     struct kore_json_item *root, *obj, *site, *lengthPt;
     char password[PASSWORD_MAX_LEN + 1];
@@ -111,7 +141,7 @@ int password_generate(struct http_request *req)
     int64_t pw_length = PASSWORD_DEFAULT_LEN;
     ssize_t body_len;
 
-    // Lire le body de la requête
+    /* Le body est obligatoire pour fournir au minimum `site`. */
     if (req->http_body_length == 0)
     {
         http_response(req, 400, NULL, 0);
@@ -122,7 +152,7 @@ int password_generate(struct http_request *req)
 
     body_len = http_body_read(req, body, req->http_body_length);
 
-    // Parser le JSON du body pour qu'il soit manipulable par le framework
+    /* Parse le JSON reçu pour accéder aux champs métier. */
     kore_json_init(&json, body, (size_t)body_len);
     if (!kore_json_parse(&json))
     {
@@ -132,7 +162,7 @@ int password_generate(struct http_request *req)
         return (KORE_RESULT_OK);
     }
 
-    // Récupérer le champ "site"
+    /* `site` est requis: identifie le service auquel associer le secret. */
     site = kore_json_find_string(json.root, "site");
     if (site == NULL)
     {
@@ -141,15 +171,15 @@ int password_generate(struct http_request *req)
         return (KORE_RESULT_OK);
     }
 
-    // Récupérer "length" (optionnel)
+    /* `length` est optionnel et borné pour éviter des tailles invalides. */
     lengthPt = kore_json_find_integer(json.root, "length");
     if (lengthPt != NULL && lengthPt->data.integer >= 8 && lengthPt->data.integer <= PASSWORD_MAX_LEN)
         pw_length = lengthPt->data.integer;
 
-    // Générer le mot de passe
+    /* Génération pseudo-aléatoire via l'alphabet défini en constantes. */
     generate_password(password, (int)pw_length);
 
-    // Sauvegarder en base
+    /* Persistance de la paire (site, mot de passe). */
     if (sqlite3_prepare_v2(db,
                            "INSERT INTO passwords (site, password) VALUES (?, ?)",
                            -1, &stmt, NULL) != SQLITE_OK)
@@ -175,7 +205,7 @@ int password_generate(struct http_request *req)
     sqlite3_int64 new_id = sqlite3_last_insert_rowid(db);
     sqlite3_finalize(stmt);
 
-    // Construire la réponse JSON
+    /* Réponse JSON contenant la ressource créée. */
     root = kore_json_create_object(NULL, NULL);
     obj = kore_json_create_object(root, "password");
     kore_json_create_integer(obj, "id", new_id);
@@ -198,6 +228,11 @@ int password_generate(struct http_request *req)
 
 int password_delete(struct http_request *req)
 {
+    /*
+     * Attend un body JSON: { "id": <entier> }
+     * - 204 si suppression réussie
+     * - 404 si l'id n'existe pas
+     */
     struct kore_json json;
     struct kore_json_item *id_item;
     sqlite3_stmt *stmt;
